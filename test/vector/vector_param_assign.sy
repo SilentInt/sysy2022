@@ -1,0 +1,12 @@
+vector<int, 8> mix(vector<int, 8> x, vector<int, 8> y) {
+  vector<int, 8> z = x + y;
+  return z;
+}
+
+int main() {
+  vector<int, 8> a = {1, 1, 2, 3, 5, 8, 13, 21};
+  vector<int, 8> b = {1, 2, 3, 4, 5, 6, 7, 8};
+  vector<int, 8> c;
+  c = mix(a, b);
+  return 0;
+}

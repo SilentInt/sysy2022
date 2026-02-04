@@ -1,0 +1,10 @@
+vector<float, 4> hadamard(vector<float, 4> v, vector<float, 4> w) {
+  return v * w;
+}
+
+int main() {
+  vector<float, 4> a = {1.0, 2.0, 3.0, 4.0};
+  vector<float, 4> b = {0.5, 1.0, 1.5, 2.0};
+  vector<float, 4> c = hadamard(a, b);
+  return 0;
+}

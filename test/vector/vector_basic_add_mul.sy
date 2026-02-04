@@ -1,0 +1,11 @@
+const int N = 4;
+
+vector<int, N> a = {1, 2, 3, 4};
+vector<int, N> b = {4, 3, 2, 1};
+vector<int, N> c;
+
+int main() {
+  c = a + b;
+  vector<int, N> d = c * b;
+  return 0;
+}

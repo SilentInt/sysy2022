@@ -1,0 +1,9 @@
+const int BASE = 2;
+const int LEN = BASE + 2;
+
+int main() {
+  vector<int, LEN> v = {10, 20, 30, 40};
+  vector<int, LEN> w = {1, 2, 3, 4};
+  vector<int, LEN> r = v + w * v;
+  return 0;
+}
