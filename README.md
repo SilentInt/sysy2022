@@ -2,31 +2,38 @@
 
 这是一个完整的 SysY 语言编译器实现，可以将 SysY 源代码编译为 RISC-V 64 汇编代码。编译器采用多阶段设计，包含词法分析、语法分析、AST 构建、AST 优化、LLVM IR 生成和最终的 RISC-V 汇编代码生成。
 
-## 当前项目结构（updated：2025/12/26）
+## 当前项目结构（updated：2026/02/05）
 
 ```
-├── ast/                    # 抽象语法树相关实现
-│   ├── ast.h              # AST 节点定义
-│   ├── ast_builder.h      # AST 构建器
-│   ├── ast_optimizer.h    # AST 优化器
-│   ├── constant_folding.h # 常量折叠优化
-│   └── loop_optimization.h # 循环优化
-├── codegen/               # 代码生成相关实现
-│   ├── ir_generator.cpp/h # LLVM IR 生成器
+├── ast/                     # 抽象语法树相关实现
+│   ├── ast.h               # AST 节点定义
+│   ├── ast_builder.h       # AST 构建器（基于 ANTLR Visitor）
+│   ├── ast_optimizer.h     # AST 优化器
+│   ├── constant_folding.h  # 常量折叠优化
+│   └── loop_optimization.h # 循环优化（预留）
+├── codegen/                # 代码生成相关实现
+│   ├── ir_generator.cpp/h  # LLVM IR 生成器
 │   └── riscv_backend.cpp/h # RISC-V 后端
-├── frontend/              # 前端词法语法分析
-│   ├── SysYLexer.cpp/h   # 词法分析器
-│   ├── SysYParser.cpp/h  # 语法分析器
-│   └── SysYVisitor.h     # 访问者接口
-├── test/                 # 测试用例
-├── main.cpp             # 主程序入口
-├── Makefile             # 构建配置
-└── SysY.g4              # ANTLR4 语法定义文件
+├── frontend/               # ANTLR 生成的前端代码（由 antlr_generate.sh 生成）
+│   ├── SysYLexer.cpp/h
+│   ├── SysYParser.cpp/h
+│   ├── SysYBaseVisitor.cpp/h
+│   ├── SysYVisitor.cpp/h
+│   ├── SysYBaseListener.cpp/h
+│   ├── SysYListener.cpp/h
+│   ├── SysY.interp
+│   └── SysY.tokens
+├── test/                   # 测试用例
+│   └── vector/             # 向量相关测试
+├── antlr_generate.sh       # 生成前端代码脚本
+├── main.cpp                # 主程序入口
+├── Makefile                # 构建配置
+└── SysY.g4                 # ANTLR4 语法定义文件
 ```
 
 ## 目前实现的功能特性
 
-- **完整的 SysY 语言支持**
+- **完整的 SysY 语言支持（含扩展）**
   
   - 变量和常量声明与定义
   - 整数和浮点数类型支持
@@ -34,7 +41,8 @@
   - 向量类型支持（定长向量）
   - 完整的表达式支持：
     - 算术运算（+、-、*、/、%）
-      - 向量算术运算（+、*，同类型同长度逐元素运算）
+      - 向量算术运算（+、-、*、/，同类型同长度逐元素运算）
+      - 向量-标量广播运算（+、-、*、/、%，支持标量自动广播）
     - 关系运算（<、>、<=、>=）
     - 相等性运算（==、!=）
     - 逻辑运算（&&、||、!）
@@ -58,9 +66,8 @@
 - **AST 优化**
   
   - 常量折叠优化
-  - 循环优化（预留接口）
-  - 多轮优化支持
-  - 优化级别控制（O0-O3）
+  - 循环优化（预留接口，未启用）
+  - 多轮优化支持（最多 8 轮）
 
 - **基于 ANTLR4 的词法和语法分析**
   
@@ -81,12 +88,13 @@
   - 声明生成
   - 数组支持
   - 初始化值生成
+  - 内建函数：`vsum`（向量元素求和）
 
 - **RISC-V 64 目标汇编代码生成**
   
   - 基于 LLVM 的 RISC-V 后端
   - 生成高效的 RISC-V 64 汇编代码
-  - 支持多级优化（O0-O3）
+  - 支持多级 CodeGen 优化（O0-O3）
 
 - **调试输出支持**
   
@@ -94,16 +102,26 @@
   - `--dump-ir`：输出 LLVM IR 到文件
   - `-v, --verbose`：详细输出编译过程
 
+
+
 ## 编译要求
 
 - C++17 或更高版本
-- LLVM 17 或更高版本
-- ANTLR4 C++ 运行时库
+- LLVM 17（通过 `llvm-config-17`）
+- ANTLR4（命令行工具 `antlr4` + C++ 运行时库）
 - Make 构建系统
+
+## 环境安装
+- 下载antlr C++ target runtime并根据readme编译安装
+https://www.antlr.org/download.html
+- 使用apt等包管理器安装antlr4工具库
 
 ## 构建方法
 
 ```bash
+# 生成 ANTLR 前端代码（首次或语法更新后）
+./antlr_generate.sh
+
 # 编译编译器
 make
 
@@ -135,7 +153,7 @@ make version
 
 ## 向量类型（扩展语法）
 
-向量是定长、同元素类型的值类型，支持逐元素加法与乘法，以及对向量内所有元素求和的运算。
+向量是定长、同元素类型的值类型，支持逐元素算术运算、标量广播运算，以及对向量内所有元素求和的运算。
 
 - 语法：`vector<元素类型, 长度>`
 - 元素类型：`int` 或 `float`
@@ -147,18 +165,22 @@ make version
 - `vector<float, 8> b = {1.0, 2.0, 3.0, 4.0};`
 - `vector<float, 4> c = a * b;`  // 逐元素乘法
 - `vector<int, 4> d = a + a;`    // 逐元素加法
+- `vector<int, 4> e = d + 2;`    // 标量广播
 - `int s = vsum(d);`             // 向量元素求和（float 向量返回 float）
 
 约束与说明：
 
-- 向量之间的 `+`、`*` 仅支持同长度、同元素类型
+- 向量之间的 `+`、`-`、`*`、`/` 仅支持同长度、同元素类型
+- 向量与标量支持 `+`、`-`、`*`、`/`、`%`（浮点向量不支持 `%`）
 - 向量不能出现在条件表达式中
-- 向量不支持下标访问（请使用数组）
+- 向量支持一维下标访问与赋值：`v[i]` / `v[i] = x`
+- 向量不能再叠加数组维度（不支持 `vector<...>[N]`）
 
 ### 命令行选项
 
-- `-o <file>`: 指定输出汇编文件（默认：output.s）
+- `-o <file>`: 指定输出汇编文件（默认：<input>.s）
 - `-O <level>`: 优化级别（0-3，默认：O0）
+    - 也支持 `-O1` / `-O2` / `-O3` 形式
   - O0: 无优化
   - O1: 基础优化
   - O2: 中级优化
@@ -198,29 +220,7 @@ make version
 
 ## 测试用例
 
-项目包含了测试用例，位于 `test/` 目录下：
-
-- `examples/`：性能测试用例
-- `examples_final/`：决赛性能测试用例
-- `test_ast_generator.cpp`：AST 生成测试
-- `test_ir.cpp`：IR 生成测试
-
-### 批量编译测试
-
-```bash
-# 编译所有测试用例（默认 O0）
-make compile-tests
-
-# 使用指定优化级别编译测试用例
-make compile-tests OPT_LEVEL=1
-make compile-tests OPT_LEVEL=2
-make compile-tests OPT_LEVEL=3
-
-# 查看编译日志
-cat errorlog.txt
-```
-
-编译结果会保存在 `test_res/` 目录中，错误日志保存在 `errorlog.txt`。
+当前仓库包含向量相关测试，位于 `test/vector/`，每个用例包含 `.sy` 源文件与参考 `.s` 汇编输出。
 
 ## 示例代码
 
@@ -273,7 +273,7 @@ int main() {
 
 1. 确保已正确安装所有依赖
 2. 输入文件必须以 `.sy` 为扩展名
-3. 输出文件默认为 `.s` 扩展名
+3. 默认输出文件名为 `<input>.s`
 4. 调试模式会生成额外的中间文件
 5. 支持的 SysY 语言特性已完整实现
 6. 优化级别说明：
