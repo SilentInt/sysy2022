@@ -1,0 +1,25 @@
+// 向量与标量广播运算测试
+int main() {
+  vector<int, 4> vi = {1, 2, 3, 4};
+  vector<int, 4> va = vi + 3;
+  vector<int, 4> vb = 10 - vi;
+  vector<int, 4> vc = vi * 2;
+  vector<int, 4> vd = 100 / vi;
+  vector<int, 4> ve = vi % 2;
+
+  vector<float, 4> vf = {1.0, 2.0, 3.0, 4.0};
+  vector<float, 4> vg = vf + 0.5;
+  vector<float, 4> vh = 2.5 * vf;
+  vector<float, 4> vi2 = 10.0 / vf;
+
+  // 防止未使用警告
+  int used = 0;
+  if (vsum(va) > 0) {
+    used = 1;
+  }
+  if (vsum(vg) > 0.0) {
+    used = used + 1;
+  }
+
+  return used;
+}

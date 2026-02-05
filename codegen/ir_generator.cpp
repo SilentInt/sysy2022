@@ -1,5 +1,6 @@
 #include "ir_generator.h"
 #include <llvm/IR/Constants.h>
+#include <llvm/IR/DerivedTypes.h>
 #include <llvm/Support/raw_ostream.h>
 #include <stdexcept>
 #include <iostream>
@@ -333,30 +334,101 @@ llvm::Value* IRGenerator::generateExpr(ExprAST* expr) {
         bool lhsIsVector = lhsType->isVectorTy();
         bool rhsIsVector = rhsType->isVectorTy();
         if (lhsIsVector || rhsIsVector) {
-            if (!(lhsIsVector && rhsIsVector)) {
-                throw std::runtime_error("Vector operation requires both operands to be vectors");
+            // 向量-向量运算
+            if (lhsIsVector && rhsIsVector) {
+                if (lhsType != rhsType) {
+                    throw std::runtime_error("Vector operands must have the same type");
+                }
+                auto vecType = llvm::cast<llvm::VectorType>(lhsType);
+                llvm::Type* elemType = vecType->getElementType();
+                bool elemIsFloat = elemType->isFloatingPointTy();
+                switch (binaryExpr->getOp()) {
+                    case BinaryExprAST::ADD:
+                        return elemIsFloat ? builder.CreateFAdd(lhs, rhs, "vaddtmp")
+                                           : builder.CreateAdd(lhs, rhs, "vaddtmp");
+                    case BinaryExprAST::SUB:
+                        return elemIsFloat ? builder.CreateFSub(lhs, rhs, "vsubtmp")
+                                           : builder.CreateSub(lhs, rhs, "vsubtmp");
+                    case BinaryExprAST::MUL:
+                        return elemIsFloat ? builder.CreateFMul(lhs, rhs, "vmultmp")
+                                           : builder.CreateMul(lhs, rhs, "vmultmp");
+                    case BinaryExprAST::DIV:
+                        return elemIsFloat ? builder.CreateFDiv(lhs, rhs, "vdivtmp")
+                                           : builder.CreateSDiv(lhs, rhs, "vdivtmp");
+                    default:
+                        throw std::runtime_error("Unsupported vector binary operator");
+                }
             }
-            if (lhsType != rhsType) {
-                throw std::runtime_error("Vector operands must have the same type");
+
+            // 向量-标量广播运算
+            auto op = binaryExpr->getOp();
+            if (op != BinaryExprAST::ADD && op != BinaryExprAST::SUB &&
+                op != BinaryExprAST::MUL && op != BinaryExprAST::DIV &&
+                op != BinaryExprAST::MOD) {
+                throw std::runtime_error("Unsupported vector-scalar operator");
             }
-            auto vecType = llvm::cast<llvm::VectorType>(lhsType);
+
+            bool scalarOnLeft = !lhsIsVector;
+            llvm::Value* vecValue = lhsIsVector ? lhs : rhs;
+            llvm::Value* scalarValue = lhsIsVector ? rhs : lhs;
+            auto vecType = llvm::dyn_cast<llvm::VectorType>(vecValue->getType());
+            if (!vecType) {
+                throw std::runtime_error("Vector-scalar operation requires a vector operand");
+            }
+            auto fixedVecType = llvm::dyn_cast<llvm::FixedVectorType>(vecType);
+            if (!fixedVecType) {
+                throw std::runtime_error("Vector-scalar operation only supports fixed-length vectors");
+            }
+
             llvm::Type* elemType = vecType->getElementType();
             bool elemIsFloat = elemType->isFloatingPointTy();
-            switch (binaryExpr->getOp()) {
+
+            // 标量类型适配
+            if (elemIsFloat) {
+                if (scalarValue->getType()->isIntegerTy()) {
+                    scalarValue = builder.CreateSIToFP(scalarValue, elemType, "vsplat.int2float");
+                } else if (!scalarValue->getType()->isFloatingPointTy()) {
+                    throw std::runtime_error("Vector-scalar multiplication expects int/float scalar");
+                }
+            } else {
+                if (!scalarValue->getType()->isIntegerTy()) {
+                    throw std::runtime_error("Vector<int> scalar must be integer");
+                }
+            }
+
+            auto numElems = fixedVecType->getNumElements();
+            llvm::Value* splat = builder.CreateVectorSplat(numElems, scalarValue, "vsplat");
+            switch (op) {
                 case BinaryExprAST::ADD:
-                    return elemIsFloat ? builder.CreateFAdd(lhs, rhs, "vaddtmp")
-                                       : builder.CreateAdd(lhs, rhs, "vaddtmp");
+                    return elemIsFloat ? builder.CreateFAdd(vecValue, splat, "vsaddtmp")
+                                       : builder.CreateAdd(vecValue, splat, "vsaddtmp");
                 case BinaryExprAST::SUB:
-                    return elemIsFloat ? builder.CreateFSub(lhs, rhs, "vsubtmp")
-                                       : builder.CreateSub(lhs, rhs, "vsubtmp");
+                    if (scalarOnLeft) {
+                        return elemIsFloat ? builder.CreateFSub(splat, vecValue, "vssubtmp")
+                                           : builder.CreateSub(splat, vecValue, "vssubtmp");
+                    }
+                    return elemIsFloat ? builder.CreateFSub(vecValue, splat, "vssubtmp")
+                                       : builder.CreateSub(vecValue, splat, "vssubtmp");
                 case BinaryExprAST::MUL:
-                    return elemIsFloat ? builder.CreateFMul(lhs, rhs, "vmultmp")
-                                       : builder.CreateMul(lhs, rhs, "vmultmp");
+                    return elemIsFloat ? builder.CreateFMul(vecValue, splat, "vsmultmp")
+                                       : builder.CreateMul(vecValue, splat, "vsmultmp");
                 case BinaryExprAST::DIV:
-                    return elemIsFloat ? builder.CreateFDiv(lhs, rhs, "vdivtmp")
-                                       : builder.CreateSDiv(lhs, rhs, "vdivtmp");
+                    if (scalarOnLeft) {
+                        return elemIsFloat ? builder.CreateFDiv(splat, vecValue, "vsdivtmp")
+                                           : builder.CreateSDiv(splat, vecValue, "vsdivtmp");
+                    }
+                    return elemIsFloat ? builder.CreateFDiv(vecValue, splat, "vsdivtmp")
+                                       : builder.CreateSDiv(vecValue, splat, "vsdivtmp");
+                case BinaryExprAST::MOD:
+                    if (elemIsFloat) {
+                        throw std::runtime_error("Vector-scalar modulo does not support float");
+                    }
+                    if (scalarOnLeft) {
+                        return builder.CreateSRem(splat, vecValue, "vsmodtmp");
+                    }
+                    return builder.CreateSRem(vecValue, splat, "vsmodtmp");
                 default:
-                    throw std::runtime_error("Unsupported vector binary operator");
+                    throw std::runtime_error("Unsupported vector-scalar operator");
             }
         }
         bool lhsIsInt = lhsType->isIntegerTy();
@@ -800,6 +872,47 @@ void IRGenerator::generateStmt(StmtAST* stmt) {
             }
         }
         
+        // 向量索引赋值：v[i] = x
+        if (symOpt) {
+            llvm::Value* varPtr = symOpt.value().value;
+            llvm::Type* allocatedType = nullptr;
+            if (auto allocaInst = llvm::dyn_cast<llvm::AllocaInst>(varPtr)) {
+                allocatedType = allocaInst->getAllocatedType();
+            } else if (auto globalVar = llvm::dyn_cast<llvm::GlobalVariable>(varPtr)) {
+                allocatedType = globalVar->getValueType();
+            }
+
+            if (allocatedType && allocatedType->isVectorTy() && !lval->getIndices().empty()) {
+                if (lval->getIndices().size() != 1) {
+                    throw std::runtime_error("Vector index must be one-dimensional");
+                }
+                llvm::Value* vecValue = builder.CreateLoad(allocatedType, varPtr, "vecload");
+                llvm::Value* indexValue = generateExpr(lval->getIndices()[0].get());
+                if (!indexValue->getType()->isIntegerTy()) {
+                    throw std::runtime_error("Vector index must be integer");
+                }
+                if (indexValue->getType() != llvm::Type::getInt32Ty(context)) {
+                    indexValue = builder.CreateIntCast(indexValue, llvm::Type::getInt32Ty(context), true, "vidxcast");
+                }
+
+                llvm::Value* rval = generateExpr(assignStmt->getExpr());
+                llvm::Type* elemType = llvm::cast<llvm::VectorType>(allocatedType)->getElementType();
+                if (rval->getType() != elemType) {
+                    if (elemType->isFloatingPointTy() && rval->getType()->isIntegerTy()) {
+                        rval = builder.CreateSIToFP(rval, elemType, "int2float_elem");
+                    } else if (elemType->isIntegerTy() && rval->getType()->isFloatingPointTy()) {
+                        rval = builder.CreateFPToSI(rval, elemType, "float2int_elem");
+                    } else {
+                        throw std::runtime_error("Type mismatch in vector element assignment");
+                    }
+                }
+
+                llvm::Value* newVec = builder.CreateInsertElement(vecValue, rval, indexValue, "vecins");
+                builder.CreateStore(newVec, varPtr);
+                return;
+            }
+        }
+
         // 获取左值地址
         llvm::Value* lvalAddr = generateLValAddress(lval);
         // 生成右值表达式
@@ -1840,7 +1953,18 @@ llvm::Value* IRGenerator::generateLVal(LValExprAST* lval) {
     // 如果是数组访问
     if (!lval->getIndices().empty()) {
         if (allocatedType && allocatedType->isVectorTy()) {
-            throw std::runtime_error("Vector type does not support indexing");
+            if (lval->getIndices().size() != 1) {
+                throw std::runtime_error("Vector index must be one-dimensional");
+            }
+            llvm::Value* vecValue = builder.CreateLoad(allocatedType, varPtr, "vecload");
+            llvm::Value* indexValue = generateExpr(lval->getIndices()[0].get());
+            if (!indexValue->getType()->isIntegerTy()) {
+                throw std::runtime_error("Vector index must be integer");
+            }
+            if (indexValue->getType() != llvm::Type::getInt32Ty(context)) {
+                indexValue = builder.CreateIntCast(indexValue, llvm::Type::getInt32Ty(context), true, "vidxcast");
+            }
+            return builder.CreateExtractElement(vecValue, indexValue, "vecelem");
         }
         // 获取变量的存储类型
         if (!allocatedType) {
@@ -1910,6 +2034,46 @@ llvm::Value* IRGenerator::generateCallExpr(CallExprAST* expr) {
 
     // 获取函数名
     std::string funcName = expr->getCallee();
+
+    // 内建：向量求和 vsum(vector)
+    if (funcName == "vsum") {
+        if (expr->getArgs().size() != 1) {
+            throw std::runtime_error("vsum expects exactly one argument");
+        }
+        llvm::Value* vecValue = generateExpr(expr->getArgs()[0].get());
+        auto vecType = llvm::dyn_cast<llvm::VectorType>(vecValue->getType());
+        if (!vecType) {
+            throw std::runtime_error("vsum expects a vector argument");
+        }
+        auto fixedVecType = llvm::dyn_cast<llvm::FixedVectorType>(vecType);
+        if (!fixedVecType) {
+            throw std::runtime_error("vsum only supports fixed-length vectors");
+        }
+
+        llvm::Type* elemType = vecType->getElementType();
+        unsigned numElems = fixedVecType->getNumElements();
+        llvm::Value* acc = nullptr;
+
+        if (elemType->isFloatingPointTy()) {
+            acc = llvm::ConstantFP::get(elemType, 0.0);
+            for (unsigned i = 0; i < numElems; ++i) {
+                llvm::Value* idx = llvm::ConstantInt::get(llvm::Type::getInt32Ty(context), i);
+                llvm::Value* elem = builder.CreateExtractElement(vecValue, idx, "vsum.elem");
+                acc = builder.CreateFAdd(acc, elem, "vsum.acc");
+            }
+        } else if (elemType->isIntegerTy()) {
+            acc = llvm::ConstantInt::get(elemType, 0, true);
+            for (unsigned i = 0; i < numElems; ++i) {
+                llvm::Value* idx = llvm::ConstantInt::get(llvm::Type::getInt32Ty(context), i);
+                llvm::Value* elem = builder.CreateExtractElement(vecValue, idx, "vsum.elem");
+                acc = builder.CreateAdd(acc, elem, "vsum.acc");
+            }
+        } else {
+            throw std::runtime_error("vsum only supports int/float element vectors");
+        }
+
+        return acc;
+    }
     
     // 检查是否是starttime或stoptime函数调用
     bool isStartTimeCall = (funcName == "starttime");
@@ -2163,7 +2327,23 @@ llvm::Value* IRGenerator::generateLValAddress(LValExprAST* lval) {
     // 如果是数组访问
     if (!lval->getIndices().empty()) {
         if (allocatedType && allocatedType->isVectorTy()) {
-            throw std::runtime_error("Vector type does not support indexing");
+            if (lval->getIndices().size() != 1) {
+                throw std::runtime_error("Vector index must be one-dimensional");
+            }
+            llvm::Value* vecValue = builder.CreateLoad(allocatedType, varPtr, "vecload");
+            llvm::Value* indexValue = generateExpr(lval->getIndices()[0].get());
+            if (!indexValue->getType()->isIntegerTy()) {
+                throw std::runtime_error("Vector index must be integer");
+            }
+            if (indexValue->getType() != llvm::Type::getInt32Ty(context)) {
+                indexValue = builder.CreateIntCast(indexValue, llvm::Type::getInt32Ty(context), true, "vidxcast");
+            }
+
+            llvm::Value* elem = builder.CreateExtractElement(vecValue, indexValue, "vecelem");
+            llvm::Type* elemType = llvm::cast<llvm::VectorType>(allocatedType)->getElementType();
+            llvm::AllocaInst* tmp = builder.CreateAlloca(elemType, nullptr, "vec.elem.tmp");
+            builder.CreateStore(elem, tmp);
+            return tmp;
         }
         // 获取变量的存储类型
         if (!allocatedType) {

@@ -1,0 +1,18 @@
+// 向量索引读写测试
+int main() {
+  vector<int, 4> v = {1, 2, 3, 4};
+  int a = v[2];
+  v[1] = 10;
+  int b = v[1];
+
+  vector<float, 4> f = {1.0, 2.0, 3.0, 4.0};
+  float c = f[3];
+  f[0] = 2.5;
+
+  int used = 0;
+  if (c > 0.0) {
+    used = 1;
+  }
+
+  return a + b + used;
+}

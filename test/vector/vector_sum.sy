@@ -1,0 +1,15 @@
+// 向量求和测试
+int main() {
+  vector<int, 4> vi = {1, 2, 3, 4};
+  int si = vsum(vi);
+
+  vector<float, 4> vf = {1.0, 2.0, 3.0, 4.0};
+  float sf = vsum(vf);
+
+  // 防止未使用警告
+  int used = 0;
+  if (sf > 0.0) {
+    used = 1;
+  }
+  return si + used;
+}

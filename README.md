@@ -18,15 +18,7 @@
 │   ├── SysYLexer.cpp/h   # 词法分析器
 │   ├── SysYParser.cpp/h  # 语法分析器
 │   └── SysYVisitor.h     # 访问者接口
-├── SysYruntime/           # 运行时库
-│   ├── sylib.c/h         # 运行时库源码
-│   └── libsysy_riscv.a   # RISC-V 静态库
 ├── test/                 # 测试用例
-│   ├── examples/        # 性能测试用例
-│   ├── examples_final/  # 决赛性能测试用例
-│   ├── test_ast_generator.cpp # AST 生成测试
-│   └── test_ir.cpp      # IR 生成测试
-├── previous_log/         # 测试日志
 ├── main.cpp             # 主程序入口
 ├── Makefile             # 构建配置
 └── SysY.g4              # ANTLR4 语法定义文件
@@ -69,13 +61,6 @@
   - 循环优化（预留接口）
   - 多轮优化支持
   - 优化级别控制（O0-O3）
-
-- **运行时库支持**
-  
-  - 完整的 SysY 运行时库
-  - RISC-V 64 静态库
-  - 支持 I/O 函数（getint, getch, getarray, putint, putch, putarray 等）
-  - 支持时间函数（starttime, stoptime）
 
 - **基于 ANTLR4 的词法和语法分析**
   
@@ -150,7 +135,7 @@ make version
 
 ## 向量类型（扩展语法）
 
-向量是定长、同元素类型的值类型，支持逐元素加法与乘法。
+向量是定长、同元素类型的值类型，支持逐元素加法与乘法，以及对向量内所有元素求和的运算。
 
 - 语法：`vector<元素类型, 长度>`
 - 元素类型：`int` 或 `float`
@@ -162,6 +147,7 @@ make version
 - `vector<float, 8> b = {1.0, 2.0, 3.0, 4.0};`
 - `vector<float, 4> c = a * b;`  // 逐元素乘法
 - `vector<int, 4> d = a + a;`    // 逐元素加法
+- `int s = vsum(d);`             // 向量元素求和（float 向量返回 float）
 
 约束与说明：
 
@@ -293,9 +279,5 @@ int main() {
 6. 优化级别说明：
    - O0：无优化，编译速度快，适合调试
    - O1-O3：逐步提高优化级别，生成更高效的代码
-7. 运行时库使用：
-   - 编译生成的汇编代码需要链接运行时库
-   - 运行时库位于 `SysYruntime/` 目录
-   - 使用 RISC-V 汇编器和链接器进行最终链接
 
 
